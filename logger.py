@@ -15,10 +15,12 @@
 
 # and log.info("This is log message.") works too
 
+import datetime
 import json
 import sys
 from syslog import syslog, openlog
-import datetime
+
+from requests_futures.sessions import FuturesSession
 
 #logging levels
 DEBUG = 0
@@ -33,11 +35,10 @@ class _LoggerCore(object):
     def __init__(self):
         self._minLevel = DEBUG
         self._write_output = False
+        self._syslog = False
+        self._loggly = False
 
         self._levelDict = { DEBUG:"debug", INFO:"info", WARN:"warn", ERROR:"error", }
-
-    def start(self, appName):
-        openlog(appName)
 
     def debug(self, message, metaData = None):
         self.log(DEBUG, message, metaData)
@@ -78,8 +79,10 @@ class _LoggerCore(object):
                         logdata["misc"] += ", " + str(key) + ": " + str(value)
                     else:
                         logdata["misc"] = str(key) + ":" + str(value)
+        jsonlog = json.dumps(logdata)
 
-        syslog(json.dumps(logdata))
+        if self._syslog:
+            syslog(jsonlog)
 
         #write output to stdout
         if(self._write_output):
@@ -90,9 +93,29 @@ class _LoggerCore(object):
             print(message)
             sys.stdout.flush()
 
+        if self._loggly:
+            self._session.post(self._loggly_url, data=jsonlog)
+
+    def start(self, app_name):
+        # backward compatibility
+        self.set_syslog(app_name)
+
     #val = True / False
     def set_output_writing(self, val):
         self._write_output = val
+
+    def set_syslog(self, app_name):
+        self._syslog = True
+        openlog(app_name)
+
+    def set_loggly(self, token, tag):
+        self._loggly = True
+        self._loggly_url = 'https://logs-01.loggly.com/inputs/{}/tag/{}'.format(token, tag)
+        self._session = FuturesSession()
+
+        # https://urllib3.readthedocs.org/en/latest/security.html#insecureplatformwarning
+        import requests.packages.urllib3
+        requests.packages.urllib3.disable_warnings()
 
     def set_min_level(self, level):
         self._minLevel = level
