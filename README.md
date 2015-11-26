@@ -26,7 +26,7 @@ log.set_output_writing(True)
 log.set_loggly('xxxxxxx-yyyyy-zzzzz-yyyyy-xxxxxxx', 'app-prod')
 log.set_syslog('app.py')
 
-log.info("This is log message")
+log.info("This is log message", camera_id=123)
 ```
 
 * Default log level is DEBUG (may change in future)

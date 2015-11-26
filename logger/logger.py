@@ -52,7 +52,7 @@ class _LoggerCore(object):
     def error(self, message, **kwargs):
         self.log(ERROR, message, **kwargs)
 
-    #metadata = dict of other informations, standardized fields will be send as json fields other will be send as text in misc
+    #kwargs = dict of other informations, standardized fields will be send as json fields other will be send as text in misc
     #value of key in metadata can be None - field will be ignored
     def log(self, level, message, **kwargs):
 
@@ -68,7 +68,7 @@ class _LoggerCore(object):
         #create output json
         logdata = { 'message': message, 'level': levelStr}
         if kwargs:
-            for key, value in metadata.iteritems():
+            for key, value in kwargs.iteritems():
                 if not value:
                     continue
                 if key in self.standardized_fields:
