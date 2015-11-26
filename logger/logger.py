@@ -30,7 +30,7 @@ ERROR = 3
 
 class _LoggerCore(object):
 
-    standardizedFields = {"misc": 0, "camera_id": 0, "camera_url": 0, "user_id": 0, "email": 0, "stream_url": 0, "request_id": 0}
+    standardized_fields = {"misc": 0, "camera_id": 0, "camera_url": 0, "user_id": 0, "email": 0, "stream_url": 0, "request_id": 0}
 
     def __init__(self):
         self._minLevel = DEBUG
@@ -40,21 +40,21 @@ class _LoggerCore(object):
 
         self._levelDict = { DEBUG:"debug", INFO:"info", WARN:"warn", ERROR:"error", }
 
-    def debug(self, message, metaData = None):
-        self.log(DEBUG, message, metaData)
+    def debug(self, message, **kwargs):
+        self.log(DEBUG, message, **kwargs)
 
-    def info(self, message, metaData = None):
-        self.log(INFO, message, metaData)
+    def info(self, message, **kwargs):
+        self.log(INFO, message, **kwargs)
 
-    def warn(self, message, metaData = None):
-        self.log(WARN, message, metaData)
+    def warn(self, message, **kwargs):
+        self.log(WARN, message, **kwargs)
 
-    def error(self, message, metaData = None):
-        self.log(ERROR, message, metaData)
+    def error(self, message, **kwargs):
+        self.log(ERROR, message, **kwargs)
 
     #metadata = dict of other informations, standardized fields will be send as json fields other will be send as text in misc
     #value of key in metadata can be None - field will be ignored
-    def log(self, level, message, metadata = None):
+    def log(self, level, message, **kwargs):
 
         if(level < self._minLevel):
             return
@@ -67,15 +67,17 @@ class _LoggerCore(object):
 
         #create output json
         logdata = { 'message': message, 'level': levelStr}
-        if(metadata):
+        if kwargs:
             for key, value in metadata.iteritems():
-                if(not value):
+                if not value:
                     continue
-                if(key in self.standardizedFields):
-                    logdata[key] = value
+                if key in self.standardized_fields:
+                    # For now all std fields are strings.
+                    # Any numeric field in future needs to be excluded from conversion here.
+                    logdata[key] = str(value)
                 else:
-                    misc = logdata.get("misc")
-                    if(misc):
+                    misc = logdata.get("misc", None)
+                    if misc:
                         logdata["misc"] += ", " + str(key) + ": " + str(value)
                     else:
                         logdata["misc"] = str(key) + ":" + str(value)
@@ -87,8 +89,8 @@ class _LoggerCore(object):
         #write output to stdout
         if(self._write_output):
             message = str(datetime.datetime.now()) + " (" + logdata["level"] + "): " + logdata["message"]
-            if(metadata):
-                for key, value in metadata.iteritems():
+            if kwargs:
+                for key, value in kwargs.iteritems():
                     message += ", " + str(key) + ": " + str(value)
             print(message)
             sys.stdout.flush()
@@ -125,34 +127,32 @@ _loggerCore = _LoggerCore()
 log = _loggerCore
 
 class Logger(object):
-    #context is dict of values
-    def __init__(self, context = None):
-        self._context = None
+    "Logger with context (a dict of values) added to all messages"
+    def __init__(self, context=None):
         self.set_context(context)
 
     #to reset context set context to None
     def set_context(self, context):
         self._context = context
 
-    def debug(self, message, metaData = None):
-        self.log(DEBUG, message, metaData)
+    def debug(self, message, **kwargs):
+        self.log(DEBUG, message, **kwargs)
 
-    def info(self, message, metaData = None):
-        self.log(INFO, message, metaData)
+    def info(self, message, **kwargs):
+        self.log(INFO, message, **kwargs)
 
-    def warn(self, message, metaData = None):
-        self.log(ERROR, message, metaData)
+    def warn(self, message, **kwargs):
+        self.log(ERROR, message, **kwargs)
 
-    def error(self, message, metaData = None):
-        self.log(ERROR, message, metaData)
+    def error(self, message, **kwargs):
+        self.log(ERROR, message, **kwargs)
 
-    def log(self, level, message, metaData = None):
-
-        #combine metadata and context
-        combinedMeta = self._context.copy()
-        if(metaData != None):
-            combinedMeta.update(metaData)
-
-        _loggerCore.log(level, message, combinedMeta)
+    def log(self, level, message, **kwargs):
+        #combine kwargs and context
+        if not kwargs:
+            kwargs = {}
+        if self._context:
+            kwargs.update(self._context)
+        _loggerCore.log(level, message, **kwargs)
 
 
