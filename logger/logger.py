@@ -98,13 +98,16 @@ class _LoggerCore(object):
         if self._loggly:
             self._session.post(self._loggly_url, data=jsonlog)
 
+    # XXX backward compatibility
     def start(self, app_name):
-        # backward compatibility
         self.set_syslog(app_name)
 
-    #val = True / False
+    # XXX backward compatibility
     def set_output_writing(self, val):
-        self._write_output = val
+        self.set_console(val)
+
+    def set_console(enabled):
+        self._write_output = enabled
 
     def set_syslog(self, app_name):
         self._syslog = True

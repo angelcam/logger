@@ -22,7 +22,7 @@ pip install -r requirements.txt
 from logger import log, INFO
 
 log.set_min_level(INFO)
-log.set_output_writing(True)
+log.set_console(True)
 log.set_loggly('xxxxxxx-yyyyy-zzzzz-yyyyy-xxxxxxx', 'app-prod')
 log.set_syslog('app.py')
 
@@ -30,7 +30,7 @@ log.info("This is log message", camera_id=123)
 ```
 
 * Default log level is DEBUG (may change in future)
-* set_output_writing - enables console logs
+* set_console - enables console logs
 * set_loggly - enables async https logging to Loggly with given token a tag
 * set_syslog - enables syslog with given app_name
 
