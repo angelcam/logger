@@ -23,11 +23,8 @@ import datetime
 #logging levels
 DEBUG = 0
 INFO = 1
-ERROR = 2
-FATAL = 3
-
-stringToLevel = {"debug": DEBUG, "info": INFO, "error": ERROR, "fatal": FATAL}
-
+WARN = 2
+ERROR = 3
 
 class _LoggerCore(object):
 
@@ -37,7 +34,7 @@ class _LoggerCore(object):
         self._minLevel = DEBUG
         self._write_output = False
 
-        self._levelDict = {0:"debug", 1:"info", 2:"error", 3:"fatal"}
+        self._levelDict = { DEBUG:"debug", INFO:"info", WARN:"warn", ERROR:"error", }
 
     def start(self, appName):
         openlog(appName)
@@ -48,11 +45,11 @@ class _LoggerCore(object):
     def info(self, message, metaData = None):
         self.log(INFO, message, metaData)
 
+    def warn(self, message, metaData = None):
+        self.log(WARN, message, metaData)
+
     def error(self, message, metaData = None):
         self.log(ERROR, message, metaData)
-
-    def fatal(self, message, metaData = None):
-        self.log(FATAL, message, metaData)
 
     #metadata = dict of other informations, standardized fields will be send as json fields other will be send as text in misc
     #value of key in metadata can be None - field will be ignored
@@ -120,11 +117,11 @@ class Logger(object):
     def info(self, message, metaData = None):
         self.log(INFO, message, metaData)
 
-    def error(self, message, metaData = None):
+    def warn(self, message, metaData = None):
         self.log(ERROR, message, metaData)
 
-    def fatal(self, message, metaData = None):
-        self.log(FATAL, message, metaData)
+    def error(self, message, metaData = None):
+        self.log(ERROR, message, metaData)
 
     def log(self, level, message, metaData = None):
 
