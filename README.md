@@ -34,6 +34,14 @@ log.info("This is log message", camera_id=123)
 * set_loggly - enables async https logging to Loggly with given token a tag
 * set_syslog - enables syslog with given app_name
 
+If yout need to set context per class, instantiate and use class Logger
+
+```
+self.log = Logger.Logger({"contextKey1", contextVal1})
+self.log.log(log.INFO, "This is log message.")
+self.log.log(log.INFO, "This is log message.", contextKey2=contextVal2)
+```
+
 ### TODO ###
 
 * Allow different level for each handler (console, syslog, Loggly)

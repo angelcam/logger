@@ -1,20 +1,3 @@
-#Syslog logging module
-#Use singleton "log" or class Logger
-#exmaple:
-#from  Logger import logger
-#log.start("myAppName")
-#log.set_min_level(log.INFO)
-
-#than use singleton log or create instance of Logger
-#log.log(log.INFO, "This is log message.")
-#or
-#if yout need to set context per class, instantiate and use class Logger
-#self.log = Logger.Logger({"contextKey1", contextVal1})
-#self.log.log(log.INFO, "This is log message.")
-#self.log.log(log.INFO, "This is log message.", {"contextKey2": contextVal2})
-
-# and log.info("This is log message.") works too
-
 import datetime
 import json
 import sys
@@ -22,11 +5,12 @@ from syslog import syslog, openlog
 
 from requests_futures.sessions import FuturesSession
 
-#logging levels
+# logging levels
 DEBUG = 0
 INFO = 1
 WARN = 2
 ERROR = 3
+
 
 class _LoggerCore(object):
 
@@ -38,7 +22,7 @@ class _LoggerCore(object):
         self._syslog = False
         self._loggly = False
 
-        self._levelDict = { DEBUG:"debug", INFO:"info", WARN:"warn", ERROR:"error", }
+        self._levelDict = {DEBUG: "debug", INFO: "info", WARN: "warn", ERROR: "error", }
 
     def debug(self, message, **kwargs):
         self.log(DEBUG, message, **kwargs)
@@ -52,21 +36,20 @@ class _LoggerCore(object):
     def error(self, message, **kwargs):
         self.log(ERROR, message, **kwargs)
 
-    #kwargs = dict of other informations, standardized fields will be send as json fields other will be send as text in misc
-    #value of key in metadata can be None - field will be ignored
+    # kwargs = dict of other informations, standardized fields will be send as json fields other will be send as text in misc
+    # value of key in metadata can be None - field will be ignored
     def log(self, level, message, **kwargs):
-
-        if(level < self._minLevel):
+        if level < self._minLevel:
             return
 
         levelStr = self._levelDict.get(level, None)
-        if(not levelStr):
-            logdata = { 'message': "Logger.log: Bad log level. Cannot log message " + message, 'level': 'info' }
+        if not levelStr:
+            logdata = {'message': "Logger.log: Bad log level. Cannot log message " + message, 'level': 'info'}
             syslog(json.dumps(logdata))
             return
 
-        #create output json
-        logdata = { 'message': message, 'level': levelStr}
+        # create output json
+        logdata = {'message': message, 'level': levelStr}
         if kwargs:
             for key, value in kwargs.iteritems():
                 if not value:
@@ -86,8 +69,8 @@ class _LoggerCore(object):
         if self._syslog:
             syslog(jsonlog)
 
-        #write output to stdout
-        if(self._write_output):
+        # write output to stdout
+        if self._write_output:
             message = str(datetime.datetime.now()) + " (" + logdata["level"] + "): " + logdata["message"]
             if kwargs:
                 for key, value in kwargs.iteritems():
@@ -125,16 +108,17 @@ class _LoggerCore(object):
     def set_min_level(self, level):
         self._minLevel = level
 
-#create singleton
+# Create singleton
 _loggerCore = _LoggerCore()
 log = _loggerCore
+
 
 class Logger(object):
     "Logger with context (a dict of values) added to all messages"
     def __init__(self, context=None):
         self.set_context(context)
 
-    #to reset context set context to None
+    # to reset context set context to None
     def set_context(self, context):
         self._context = context
 
@@ -151,11 +135,9 @@ class Logger(object):
         self.log(ERROR, message, **kwargs)
 
     def log(self, level, message, **kwargs):
-        #combine kwargs and context
+        # combine kwargs and context
         if not kwargs:
             kwargs = {}
         if self._context:
             kwargs.update(self._context)
         _loggerCore.log(level, message, **kwargs)
-
-
