@@ -16,7 +16,7 @@ setup(
         "requests-futures >= 0.9.4"
     ],
     include_package_data=True,
-    platform='any',
+    platforms='any',
     classifiers=[
         'Development Status :: 4 - Beta',
         'Intended Audience :: Developers'
