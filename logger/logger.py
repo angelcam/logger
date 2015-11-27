@@ -89,7 +89,7 @@ class _LoggerCore(object):
     def set_output_writing(self, val):
         self.set_console(val)
 
-    def set_console(enabled):
+    def set_console(self, enabled):
         self._write_output = enabled
 
     def set_syslog(self, app_name):
