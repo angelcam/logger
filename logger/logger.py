@@ -51,7 +51,7 @@ class _LoggerCore(object):
         # create output json
         logdata = {'message': message, 'level': levelStr}
         if kwargs:
-            for key, value in kwargs.iteritems():
+            for key, value in kwargs.items():
                 if not value:
                     continue
                 if key in self.standardized_fields:
@@ -73,7 +73,7 @@ class _LoggerCore(object):
         if self._write_output:
             message = str(datetime.datetime.now()) + " (" + logdata["level"] + "): " + logdata["message"]
             if kwargs:
-                for key, value in kwargs.iteritems():
+                for key, value in kwargs.items():
                     message += ", " + str(key) + ": " + str(value)
             print(message)
             sys.stdout.flush()
