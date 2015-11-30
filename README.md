@@ -34,12 +34,18 @@ log.info("This is log message", camera_id=123)
 * set_loggly - enables async https logging to Loggly with given token a tag
 * set_syslog - enables syslog with given app_name
 
-If yout need to set context per class, instantiate and use class Logger
+If you need to set context per class, instantiate and use class Logger. Logging will then combine the per class context with message level one:
 
 ```
-self.log = Logger.Logger({"contextKey1", contextVal1})
+self.log = Logger.Logger(contextKey1=contextVal1)
 self.log.log(log.INFO, "This is log message.")
 self.log.log(log.INFO, "This is log message.", contextKey2=contextVal2)
+```
+
+You can set a class-level context to existing logger, but it will replace it, not combine with the current one:
+
+```
+self.log.set_context(foo=1,bar=2)
 ```
 
 ### TODO ###
