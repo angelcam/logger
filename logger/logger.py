@@ -115,12 +115,12 @@ log = _loggerCore
 
 class Logger(object):
     "Logger with context (a dict of values) added to all messages"
-    def __init__(self, context=None):
-        self.set_context(context)
+    def __init__(self, **kwargs):
+        self.set_context(**kwargs)
 
     # to reset context set context to None
-    def set_context(self, context):
-        self._context = context
+    def set_context(self, **kwargs):
+        self._context = kwargs
 
     def debug(self, message, **kwargs):
         self.log(DEBUG, message, **kwargs)
