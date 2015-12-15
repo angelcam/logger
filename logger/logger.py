@@ -71,7 +71,7 @@ class _LoggerCore(object):
 
         # write output to stdout
         if self._write_output:
-            message = str(datetime.datetime.now()) + " (" + logdata["level"] + "): " + logdata["message"]
+            message = str(datetime.datetime.now()) + " (" + logdata["level"] + "): " + str(logdata["message"])
             if kwargs:
                 for key, value in kwargs.items():
                     message += ", " + str(key) + ": " + str(value)
