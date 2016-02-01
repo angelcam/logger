@@ -4,9 +4,10 @@ Simple Python logging helper with support for console, syslog and Loggly.
 
 ### Installation ###
 
-Just add this repo to your requirements.xt
+Just add this repo and requests-futures to your requirements.txt
 
 ```
+requests-futures
 -e git+https://bitbucket.org/angelcam/logger.git#egg=logger
 ```
 
