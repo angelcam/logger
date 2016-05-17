@@ -129,7 +129,7 @@ class Logger(object):
         self.log(INFO, message, **kwargs)
 
     def warn(self, message, **kwargs):
-        self.log(ERROR, message, **kwargs)
+        self.log(WARN, message, **kwargs)
 
     def error(self, message, **kwargs):
         self.log(ERROR, message, **kwargs)
