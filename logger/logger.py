@@ -23,6 +23,8 @@ class _LoggerCore(object):
         self._loggly = False
 
         self._levelDict = {DEBUG: "debug", INFO: "info", WARN: "warn", ERROR: "error", }
+        # inverse levelDict
+        self._strLevel = {v: k for k, v in self._levelDict.items()}
 
     def debug(self, message, **kwargs):
         self.log(DEBUG, message, **kwargs)
@@ -106,7 +108,23 @@ class _LoggerCore(object):
         requests.packages.urllib3.disable_warnings()
 
     def set_min_level(self, level):
-        self._minLevel = level
+
+        # this is for python 2 and 3 compatibility
+        try:
+            basestring
+        except NameError:
+            basestring = str
+
+        newLevel = level
+        if isinstance(level, basestring):
+            try:
+                newLevel = self._strLevel[level.lower()]
+            except KeyError:
+                self.error("_LoggerCore.set_min_level: Level not supported.", argument_level=level)
+                return
+
+        self._minLevel = newLevel
+
 
 # Create singleton
 _loggerCore = _LoggerCore()

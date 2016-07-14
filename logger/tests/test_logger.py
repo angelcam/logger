@@ -3,7 +3,7 @@ import six
 import sys
 import unittest
 
-from ..logger import log, INFO, Logger
+from ..logger import log, _loggerCore, DEBUG, INFO, Logger
 
 @contextmanager
 def capture(command, *args, **kwargs):
@@ -55,4 +55,24 @@ class LoggerTest(unittest.TestCase):
         sys.stdout = out
         assert 'camera_id: 1' not in output
         assert 'user_id: 1' in output
+
+    def test_level_change(self):
+        log.set_min_level(DEBUG)
+        assert _loggerCore._minLevel == DEBUG
+        log.set_min_level(INFO)
+        assert _loggerCore._minLevel == INFO
+
+        log.set_min_level('debug')
+        assert _loggerCore._minLevel == DEBUG
+        log.set_min_level('info')
+        assert _loggerCore._minLevel == INFO
+
+        log.set_min_level('DEBUG')
+        assert _loggerCore._minLevel == DEBUG
+        log.set_min_level('INFO')
+        assert _loggerCore._minLevel == INFO
+
+        log.set_min_level('NOT DEFINED')
+        assert _loggerCore._minLevel == INFO
+
 
