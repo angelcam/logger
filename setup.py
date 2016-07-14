@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="logger",
-    version='1.0.1',
+    version='1.1.0',
     description="Angelcam Python logging helper",
     keywords="logging loggly syslog",
     author="Angelcam",
