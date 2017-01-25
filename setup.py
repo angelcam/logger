@@ -1,10 +1,17 @@
 #!/usr/bin/env python
 
+import sys
+
 from setuptools import setup, find_packages
+
+if sys.version_info.major > 2:
+    install_requires=["aiohttp >= 0.21.6"]
+else:
+    install_requires=["requests-futures >= 0.9.4"]
 
 setup(
     name="logger",
-    version='1.1.0',
+    version='1.1.1',
     description="Angelcam Python logging helper",
     keywords="logging loggly syslog",
     author="Angelcam",
@@ -12,9 +19,7 @@ setup(
     url="https://bitbucket.org/angelcam/logger/",
     license="MIT",
     packages=find_packages(),
-    install_requires=[
-        "requests-futures >= 0.9.4"
-    ],
+    install_requires=install_requires,
     include_package_data=True,
     platforms='any',
     classifiers=[

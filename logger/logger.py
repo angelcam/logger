@@ -3,7 +3,10 @@ import json
 import sys
 from syslog import syslog, openlog
 
-from requests_futures.sessions import FuturesSession
+if sys.version_info.major > 2:
+    from .loggly3 import LogglySession
+else:
+    from .loggly2 import LogglySession
 
 # logging levels
 DEBUG = 0
@@ -20,7 +23,7 @@ class _LoggerCore(object):
         self._minLevel = DEBUG
         self._write_output = False
         self._syslog = False
-        self._loggly = False
+        self._loggly = None
 
         self._levelDict = {DEBUG: "debug", INFO: "info", WARN: "warn", ERROR: "error", }
         # inverse levelDict
@@ -81,7 +84,7 @@ class _LoggerCore(object):
             sys.stdout.flush()
 
         if self._loggly:
-            self._session.post(self._loggly_url, data=jsonlog)
+            self._loggly.send(jsonlog)
 
     # XXX backward compatibility
     def start(self, app_name):
@@ -99,13 +102,7 @@ class _LoggerCore(object):
         openlog(app_name)
 
     def set_loggly(self, token, tag):
-        self._loggly = True
-        self._loggly_url = 'https://logs-01.loggly.com/inputs/{}/tag/{}'.format(token, tag)
-        self._session = FuturesSession()
-
-        # https://urllib3.readthedocs.org/en/latest/security.html#insecureplatformwarning
-        import requests.packages.urllib3
-        requests.packages.urllib3.disable_warnings()
+        self._loggly = LogglySession(token, tag)
 
     def set_min_level(self, level):
 
