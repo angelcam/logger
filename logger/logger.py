@@ -57,8 +57,6 @@ class _LoggerCore(object):
         logdata = {'message': message, 'level': levelStr}
         if kwargs:
             for key, value in kwargs.items():
-                if not value:
-                    continue
                 if key in self.standardized_fields:
                     # For now all std fields are strings.
                     # Any numeric field in future needs to be excluded from conversion here.
