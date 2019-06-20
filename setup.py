@@ -5,13 +5,13 @@ import sys
 from setuptools import setup, find_packages
 
 if sys.version_info.major > 2:
-    install_requires=["aiohttp >= 0.21.6"]
+    install_requires=["aiohttp >= 0.21.6", "pytz"]
 else:
-    install_requires=["requests-futures >= 0.9.4"]
+    install_requires=["requests-futures >= 0.9.4", "pytz"]
 
 setup(
     name="logger",
-    version='1.1.3',
+    version='1.1.4',
     description="Angelcam Python logging helper",
     keywords="logging loggly syslog",
     author="Angelcam",
