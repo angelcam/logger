@@ -84,7 +84,7 @@ class _LoggerCore(object):
             sys.stdout.flush()
 
         if self._loggly:
-            timestamp = datetime.now(tz=pytz.utc)
+            timestamp = datetime.datetime.now(tz=pytz.utc)
             self._loggly.send(json.dumps({'timestamp': timestamp.isoformat(), **logdata}))
 
     # XXX backward compatibility
