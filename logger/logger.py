@@ -1,6 +1,8 @@
 import datetime
 import json
+import pytz
 import sys
+
 from syslog import syslog, openlog
 
 if sys.version_info.major > 2:
@@ -82,7 +84,8 @@ class _LoggerCore(object):
             sys.stdout.flush()
 
         if self._loggly:
-            self._loggly.send(jsonlog)
+            timestamp = datetime.now(tz=pytz.utc)
+            self._loggly.send(json.dumps({'timestamp': timestamp.isoformat(), **logdata}))
 
     # XXX backward compatibility
     def start(self, app_name):
