@@ -27,14 +27,13 @@ class LogglyExecutor(Thread):
             self.__async_send(data),
             self.__event_loop)
 
-    @asyncio.coroutine
-    def __async_send(self, data):
+    async def __async_send(self, data):
         try:
-            response = yield from asyncio.wait_for(
+            response = await asyncio.wait_for(
                 self.__session.post(self.__url, data=data),
                 self.__timeout,
                 loop=self.__event_loop)
-            yield from response.release()
+            await response.release()
         except Exception as ex:
             traceback.print_exc()
 

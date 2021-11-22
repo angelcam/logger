@@ -7,7 +7,7 @@ Simple Python logging helper with support for console, syslog and Loggly.
 Just add this repo to your requirements.txt
 
 ```
-git+https://bitbucket.org/angelcam/logger.git#egg=logger
+git+https://github.com/angelcam/logger.git@v1.1.6#egg=logger
 ```
 
 and run
