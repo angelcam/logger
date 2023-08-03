@@ -11,7 +11,7 @@ else:
 
 setup(
     name="logger",
-    version='1.2.0',
+    version='1.2.1',
     description="Angelcam Python logging helper",
     keywords="logging loggly syslog",
     author="Angelcam",

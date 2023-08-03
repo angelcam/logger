@@ -31,25 +31,15 @@ class AsyncQueue:
         return self.queue.popleft()
 
 
-class LogglyExecutor(Thread):
-    """
-    The executor runs the internal event loop in a separate daemon thread and allows its users to send log messages
-    asynchronously.
-    """
+class LogglyExecutor:
 
-    def __init__(self, token, tag, timeout, max_tasks=4):
-        super().__init__(daemon=True)
-
+    def __init__(self, token, tag, timeout, max_tasks):
+        self.__event_loop = asyncio.get_running_loop()
         self.__url = 'https://logs-01.loggly.com/bulk/{}/tag/{}/'.format(token, tag)
-        self.__event_loop = asyncio.new_event_loop()
-        self.__session = aiohttp.ClientSession(loop=self.__event_loop)
+        self.__session = aiohttp.ClientSession()
         self.__timeout = timeout
         self.__queue = AsyncQueue()
         self.__tasks = Semaphore(max_tasks)
-
-    def run(self):
-        self.__event_loop.create_task(self.__runner())
-        self.__event_loop.run_forever()
 
     def send(self, event):
         def push():
@@ -57,7 +47,7 @@ class LogglyExecutor(Thread):
 
         self.__event_loop.call_soon_threadsafe(push)
 
-    async def __runner(self):
+    async def run(self):
         while True:
             batch = await self.__queue.pop_front()
             while self.__queue:
@@ -67,7 +57,7 @@ class LogglyExecutor(Thread):
                     break
                 batch += b'\n' + (await self.__queue.pop_front())
             await self.__tasks.acquire()
-            task = self.__event_loop.create_task(self.__send_batch(batch))
+            task = asyncio.create_task(self.__send_batch(batch))
             task.add_done_callback(lambda t: self.__tasks.release())
 
     async def __send_batch(self, data):
@@ -83,14 +73,44 @@ class LogglyExecutor(Thread):
             traceback.print_exc()
 
 
+class LogglyThread(Thread):
+
+    def __init__(self, token, tag, timeout, max_tasks=4):
+        super().__init__(daemon=True)
+
+        self.token = token
+        self.tag = tag
+        self.timeout = timeout
+        self.max_tasks = max_tasks
+        self.executor = None
+
+    def send(self, event):
+        if self.executor:
+            self.executor.send(event)
+
+    def run(self):
+        async def task():
+            self.executor = LogglyExecutor(
+                self.token,
+                self.tag,
+                self.timeout,
+                self.max_tasks,
+            )
+            await self.executor.run()
+
+        loop = asyncio.new_event_loop()
+        loop.create_task(task())
+        loop.run_forever()
+
+
 class LogglySession(object):
     """
     LogglySession for Python 3.x
     """
 
     def __init__(self, token, tag, timeout=20.0):
-        self.__executor = LogglyExecutor(token, tag, timeout)
-        self.__executor.start()
+        self.__thread = LogglyThread(token, tag, timeout)
+        self.__thread.start()
 
     def send(self, data):
-        self.__executor.send(data)
+        self.__thread.send(data)
