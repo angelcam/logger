@@ -3,11 +3,6 @@ import json
 import sys
 from syslog import syslog, openlog
 
-if sys.version_info.major > 2:
-    from .loggly3 import LogglySession
-else:
-    from .loggly2 import LogglySession
-
 # logging levels
 DEBUG = 0
 INFO = 1
@@ -24,6 +19,7 @@ class _LoggerCore(object):
         self._write_output = False
         self._syslog = False
         self._loggly = None
+        self._better_stack = None
 
         self._levelDict = {DEBUG: "debug", INFO: "info", WARN: "warn", ERROR: "error", }
         # inverse levelDict
@@ -57,7 +53,8 @@ class _LoggerCore(object):
         logdata = {'message': message, 'level': levelStr}
         if kwargs:
             for key, value in kwargs.items():
-                if not value:
+                # omit field only if value is None
+                if value is None:
                     continue
                 if key in self.standardized_fields:
                     # For now all std fields are strings.
@@ -69,10 +66,8 @@ class _LoggerCore(object):
                         logdata["misc"] += ", " + str(key) + ": " + str(value)
                     else:
                         logdata["misc"] = str(key) + ":" + str(value)
-        jsonlog = json.dumps(logdata)
-
         if self._syslog:
-            syslog(jsonlog)
+            syslog(json.dumps(logdata))
 
         # write output to stdout
         if self._write_output:
@@ -83,8 +78,12 @@ class _LoggerCore(object):
             print(message)
             sys.stdout.flush()
 
+        # each target gets its own copy to handle serialization and extra fields
         if self._loggly:
-            self._loggly.send(jsonlog)
+            self._loggly.send(dict(logdata))
+
+        if self._better_stack:
+            self._better_stack.send(dict(logdata))
 
     # XXX backward compatibility
     def start(self, app_name):
@@ -101,19 +100,19 @@ class _LoggerCore(object):
         self._syslog = True
         openlog(app_name)
 
-    def set_loggly(self, token, tag):
-        self._loggly = LogglySession(token, tag)
+    def set_loggly(self, token, tag, **options):
+        from .sinks.loggly import LogglySession
+        self._loggly = LogglySession(token, tag, **options)
+
+    # ingesting_host is specific to each Better Stack source, e.g., 's123456.eu-nbg-2.betterstackdata.com'
+    def set_better_stack(self, source_token, ingesting_host, **options):
+        from .sinks.betterstack import BetterStackSession
+        self._better_stack = BetterStackSession(
+            source_token, ingesting_host, **options)
 
     def set_min_level(self, level):
-
-        # this is for python 2 and 3 compatibility
-        try:
-            basestring
-        except NameError:
-            basestring = str
-
         newLevel = level
-        if isinstance(level, basestring):
+        if isinstance(level, str):
             try:
                 newLevel = self._strLevel[level.lower()]
             except KeyError:

@@ -1,5 +1,6 @@
 from contextlib import contextmanager
-import six
+import contextlib
+import io
 import sys
 import unittest
 
@@ -7,7 +8,7 @@ from ..logger import log, _loggerCore, DEBUG, INFO, Logger
 
 @contextmanager
 def capture(command, *args, **kwargs):
-    out, sys.stdout = sys.stdout, six.StringIO()
+    out, sys.stdout = sys.stdout, io.StringIO()
     command(*args, **kwargs)
     sys.stdout.seek(0)
     yield sys.stdout.read()
@@ -19,7 +20,7 @@ class LoggerTest(unittest.TestCase):
         log.set_min_level(INFO)
 
     def test_plain(self):
-        out, sys.stdout = sys.stdout, six.StringIO()
+        out, sys.stdout = sys.stdout, io.StringIO()
 
         log.debug('Debug message')
         log.info('Info message')
@@ -34,7 +35,7 @@ class LoggerTest(unittest.TestCase):
     def test_context(self):
         clog = Logger(camera_id=1)
 
-        out, sys.stdout = sys.stdout, six.StringIO()
+        out, sys.stdout = sys.stdout, io.StringIO()
 
         clog.info('Info message')
 
@@ -46,7 +47,7 @@ class LoggerTest(unittest.TestCase):
 
         clog.set_context(user_id=1)
 
-        out, sys.stdout = sys.stdout, six.StringIO()
+        out, sys.stdout = sys.stdout, io.StringIO()
 
         clog.info('Info message')
 
@@ -72,7 +73,8 @@ class LoggerTest(unittest.TestCase):
         log.set_min_level('INFO')
         assert _loggerCore._minLevel == INFO
 
-        log.set_min_level('NOT DEFINED')
+        with contextlib.redirect_stdout(io.StringIO()):
+            log.set_min_level('NOT DEFINED')
         assert _loggerCore._minLevel == INFO
 
 
