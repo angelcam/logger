@@ -33,6 +33,8 @@ class BatchingSender(object):
         self._shutdown_timeout = shutdown_timeout
         self._queue = queue.Queue(maxsize=max_queue_size)
         self._stopping = threading.Event()
+        self._lock = threading.Lock()
+        self._sealed = False
         self._disabled = False
         self._dropped = 0
         self._last_drop_report = 0.0
@@ -50,40 +52,46 @@ class BatchingSender(object):
         return self._dropped
 
     def send(self, record):
-        if self._disabled:
-            return
-
-        while True:
-            try:
-                self._queue.put_nowait(record)
+        with self._lock:
+            if self._disabled or self._sealed:
+                self._dropped += 1
+                self._report_drops('target is closed')
                 return
-            except queue.Full:
-                try:
-                    self._queue.get_nowait()
-                except queue.Empty:
-                    pass
-                else:
-                    self._dropped += 1
-                    self._report_drops()
 
-    def _report_drops(self):
+            while True:
+                try:
+                    self._queue.put_nowait(record)
+                    return
+                except queue.Full:
+                    try:
+                        self._queue.get_nowait()
+                    except queue.Empty:
+                        pass
+                    else:
+                        self._dropped += 1
+                        self._report_drops('queue full')
+
+    def _report_drops(self, reason):
         now = time.monotonic()
         if now - self._last_drop_report < _DROP_REPORT_INTERVAL:
             return
         self._last_drop_report = now
-        _report('queue full, dropped %d records so far' % self._dropped)
+        _report('%s, dropped %d records so far' % (reason, self._dropped))
 
     def stop(self, timeout=None):
         if timeout is None:
             timeout = self._shutdown_timeout
 
+        with self._lock:
+            self._sealed = True
         self._stopping.set()
         self._worker.join(timeout)
         atexit.unregister(self.stop)
 
-        if self._worker.is_alive():
-            _report('shutdown timed out after %.1fs, at least %d records were '
-                    'not delivered' % (timeout, self._queue.qsize()))
+        pending = self._queue.qsize()
+        if self._worker.is_alive() or pending:
+            _report('shutdown incomplete after %.1fs, at least %d records were '
+                    'not delivered' % (timeout, pending))
             return False
         return True
 
@@ -124,6 +132,10 @@ class BatchingSender(object):
                             % (len(batch), attempt + 1))
                     return
                 self._stopping.wait(self._retry_backoff * (2 ** attempt))
+                if self._stopping.is_set():
+                    _report('shutting down, dropping a batch of %d records'
+                            % len(batch))
+                    return
 
     def _collect(self):
         batch = []

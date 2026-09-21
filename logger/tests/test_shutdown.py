@@ -57,6 +57,21 @@ class ShutdownRetryTest(unittest.TestCase):
         self.assertEqual(1, transport.attempts)
 
 
+class MidFlightShutdownTest(unittest.TestCase):
+    def test_retry_chain_breaks_on_stop(self):
+        transport = FakeTransport(fail_times=99)
+        sender = BatchingSender(transport, max_batch_size=1,
+                                flush_interval=0.05, max_retries=2,
+                                retry_backoff=1.0)
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            sender.send({'message': 'x'})
+            time.sleep(0.2)
+            sender.stop(timeout=2.0)
+
+        self.assertEqual(1, transport.attempts)
+
+
 class ShutdownBudgetTest(unittest.TestCase):
     def test_budget_exceeds_http_timeout(self):
         session = BetterStackSession('t', 'h.example.com', http=FakeTransport(),
