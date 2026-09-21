@@ -1,3 +1,4 @@
+import functools
 import json
 
 from .batching import BatchingSender, NonRetryableError
@@ -9,17 +10,18 @@ _RATE_LIMITED = 429
 
 class LogglySession(object):
 
-    def __init__(self, token, tag, http=None, **batching):
+    def __init__(self, token, tag, http=None, http_timeout=5.0, **batching):
         self._url = _BULK_URL.format(token, tag)
         self._headers = {'Content-Type': 'application/json'}
-        self._http = http or post
+        self._http = http or functools.partial(post, timeout=http_timeout)
+        batching.setdefault('shutdown_timeout', http_timeout + 2.0)
         self._sender = BatchingSender(self._deliver, **batching)
 
     def send(self, record):
         self._sender.send(record)
 
-    def stop(self, timeout=3.0):
-        self._sender.stop(timeout)
+    def stop(self, timeout=None):
+        return self._sender.stop(timeout)
 
     def _deliver(self, records):
         body = '\n'.join(json.dumps(r) for r in records).encode('utf-8')

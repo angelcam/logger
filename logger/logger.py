@@ -102,13 +102,21 @@ class _LoggerCore(object):
 
     def set_loggly(self, token, tag, **options):
         from .sinks.loggly import LogglySession
+        self._retire(self._loggly)
         self._loggly = LogglySession(token, tag, **options)
 
     # ingesting_host is specific to each Better Stack source, e.g., 's123456.eu-nbg-2.betterstackdata.com'
     def set_better_stack(self, source_token, ingesting_host, **options):
         from .sinks.betterstack import BetterStackSession
+        self._retire(self._better_stack)
         self._better_stack = BetterStackSession(
             source_token, ingesting_host, **options)
+
+    # stop old session to clean up its worker thread and shutdown hook
+    @staticmethod
+    def _retire(session):
+        if session:
+            session.stop()
 
     def set_min_level(self, level):
         newLevel = level

@@ -23,12 +23,14 @@ class BatchingSender(object):
     """Batches records and sends them to a transport in a background thread."""
 
     def __init__(self, transport, max_batch_size=500, flush_interval=5.0,
-                 max_queue_size=10000, max_retries=2, retry_backoff=0.5):
+                 max_queue_size=10000, max_retries=2, retry_backoff=0.5,
+                 shutdown_timeout=3.0):
         self._transport = transport
         self._max_batch_size = max_batch_size
         self._flush_interval = flush_interval
         self._max_retries = max_retries
         self._retry_backoff = retry_backoff
+        self._shutdown_timeout = shutdown_timeout
         self._queue = queue.Queue(maxsize=max_queue_size)
         self._stopping = threading.Event()
         self._disabled = False
@@ -71,9 +73,19 @@ class BatchingSender(object):
         self._last_drop_report = now
         _report('queue full, dropped %d records so far' % self._dropped)
 
-    def stop(self, timeout=3.0):
+    def stop(self, timeout=None):
+        if timeout is None:
+            timeout = self._shutdown_timeout
+
         self._stopping.set()
         self._worker.join(timeout)
+        atexit.unregister(self.stop)
+
+        if self._worker.is_alive():
+            _report('shutdown timed out after %.1fs, at least %d records were '
+                    'not delivered' % (timeout, self._queue.qsize()))
+            return False
+        return True
 
     def _run(self):
         while not self._stopping.is_set():
@@ -96,7 +108,9 @@ class BatchingSender(object):
             self._deliver(batch)
 
     def _deliver(self, batch):
-        for attempt in range(self._max_retries + 1):
+        max_retries = 0 if self._stopping.is_set() else self._max_retries
+
+        for attempt in range(max_retries + 1):
             try:
                 self._transport(batch)
                 return
@@ -105,7 +119,7 @@ class BatchingSender(object):
                 self._disabled = True
                 return
             except Exception:
-                if attempt == self._max_retries:
+                if attempt == max_retries:
                     _report('dropping a batch of %d records after %d attempts'
                             % (len(batch), attempt + 1))
                     return

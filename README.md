@@ -35,7 +35,7 @@ log.info("This is log message", camera_id=123)
 * Default log level is DEBUG (may change in future)
 * set_console - enables console logs
 * set_better_stack - enables async batched logging to Better Stack with the given source token and ingesting host
-* set_loggly - enables async batched logging to Loggly with given token a tag
+* set_loggly - enables async batched logging to Loggly with the given token and a tag
 * set_syslog - enables syslog with given app_name
 
 Better Stack and Loggly are independent: configure both and every message is
@@ -68,8 +68,13 @@ log.set_better_stack(token, host, max_batch_size=500, flush_interval=5.0,
   because logging must never block the application
 * `max_retries` (2) - retries for network errors, HTTP 429 and 5xx. Other 4xx
   responses (an invalid token, say) are not retried and disable the target
+* `http_timeout` (5.0 s) - per request; `shutdown_timeout` defaults to this plus
+  two seconds, so a request in flight cannot outlast the shutdown budget
 
-Whatever is still buffered is flushed when the process exits.
+On exit the library *tries* to flush whatever is still buffered, within the
+shutdown budget - it is an attempt, not a guarantee. Retries are skipped during
+shutdown, and `stop()` returns `False` (and warns on stderr) when it could not
+deliver everything in time, rather than claiming a clean flush.
 
 Delivery is best-effort: failures are reported on stderr and never raised back
 into the calling application.
