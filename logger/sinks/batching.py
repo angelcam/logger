@@ -37,6 +37,7 @@ class BatchingSender(object):
         self._sealed = False
         self._disabled = False
         self._dropped = 0
+        self._lost_on_shutdown = 0
         self._last_drop_report = 0.0
         self._worker = threading.Thread(target=self._run, daemon=True)
         self._worker.start()
@@ -88,7 +89,7 @@ class BatchingSender(object):
         self._worker.join(timeout)
         atexit.unregister(self.stop)
 
-        pending = self._queue.qsize()
+        pending = self._queue.qsize() + self._lost_on_shutdown
         if self._worker.is_alive() or pending:
             _report('shutdown incomplete after %.1fs, at least %d records were '
                     'not delivered' % (timeout, pending))
@@ -123,19 +124,24 @@ class BatchingSender(object):
                 self._transport(batch)
                 return
             except NonRetryableError as ex:
-                _report('disabling this target: %s' % ex)
                 self._disabled = True
+                self._abandon(batch, 'disabling this target: %s' % ex)
                 return
             except Exception:
                 if attempt == max_retries:
-                    _report('dropping a batch of %d records after %d attempts'
-                            % (len(batch), attempt + 1))
+                    self._abandon(batch, 'gave up after %d attempts'
+                                  % (attempt + 1))
                     return
                 self._stopping.wait(self._retry_backoff * (2 ** attempt))
                 if self._stopping.is_set():
-                    _report('shutting down, dropping a batch of %d records'
-                            % len(batch))
+                    self._abandon(batch, 'shutting down')
                     return
+
+    def _abandon(self, batch, reason):
+        _report('%s, dropping a batch of %d records' % (reason, len(batch)))
+        self._dropped += len(batch)
+        if self._stopping.is_set():
+            self._lost_on_shutdown += len(batch)
 
     def _collect(self):
         batch = []

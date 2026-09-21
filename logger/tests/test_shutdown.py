@@ -1,5 +1,6 @@
 import contextlib
 import io
+import threading
 import time
 import unittest
 
@@ -16,9 +17,11 @@ class SlowTransport(object):
     def __init__(self, delay):
         self.delay = delay
         self.attempts = 0
+        self.entered = threading.Event()
 
     def __call__(self, records):
         self.attempts += 1
+        self.entered.set()
         time.sleep(self.delay)
 
 
@@ -31,10 +34,11 @@ class StopResultTest(unittest.TestCase):
         self.assertTrue(sender.stop(timeout=2.0))
 
     def test_returns_false_when_not_drained(self):
-        sender = BatchingSender(SlowTransport(5.0), max_batch_size=1,
+        transport = SlowTransport(5.0)
+        sender = BatchingSender(transport, max_batch_size=1,
                                 flush_interval=0.05)
         sender.send({'message': 'in flight'})
-        time.sleep(0.2)
+        self.assertTrue(transport.entered.wait(2.0), 'delivery never started')
         sender.send({'message': 'still queued'})
 
         with contextlib.redirect_stderr(io.StringIO()) as err:
@@ -66,10 +70,23 @@ class MidFlightShutdownTest(unittest.TestCase):
 
         with contextlib.redirect_stderr(io.StringIO()):
             sender.send({'message': 'x'})
-            time.sleep(0.2)
+            self.assertTrue(transport.wait_for_attempts(1), 'no attempt was made')
             sender.stop(timeout=2.0)
 
         self.assertEqual(1, transport.attempts)
+
+    def test_abandoned_batch_fails_stop(self):
+        transport = FakeTransport(fail_times=99)
+        sender = BatchingSender(transport, max_batch_size=1,
+                                flush_interval=0.05, max_retries=2,
+                                retry_backoff=1.0)
+
+        with contextlib.redirect_stderr(io.StringIO()) as err:
+            sender.send({'message': 'never delivered'})
+            self.assertTrue(transport.wait_for_attempts(1), 'no attempt was made')
+            self.assertFalse(sender.stop(timeout=2.0))
+
+        self.assertIn('not delivered', err.getvalue())
 
 
 class ShutdownBudgetTest(unittest.TestCase):

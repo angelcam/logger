@@ -20,6 +20,15 @@ class FakeTransport(object):
         if should_fail:
             raise self._error
 
+    def wait_for_attempts(self, count, timeout=2.0):
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            with self._lock:
+                if self.attempts >= count:
+                    return True
+            time.sleep(0.005)
+        return False
+
     def wait_for_batches(self, count, timeout=2.0):
         deadline = time.time() + timeout
         while time.time() < deadline:
