@@ -12,7 +12,13 @@ from threading import Event, Thread
 # is down must not bury stderr under one traceback per batch
 REPORT_INTERVAL = 10.0
 STARTUP_TIMEOUT = 5.0
+SEND_ATTEMPTS = 3
+RETRY_BACKOFF = 0.5
 DRAIN_POLL_INTERVAL = 0.005
+
+
+class PermanentFailure(Exception):
+    """Unrecoverable failure, e.g., rejected token. Skips futile retries."""
 
 
 def report(message):
@@ -144,12 +150,23 @@ class BatchExecutor:
             await asyncio.sleep(DRAIN_POLL_INTERVAL)
 
     async def __send(self, batch):
-        try:
-            await self.__post(b'\n'.join(batch))
-        except Exception as ex:
-            # one bad batch must never stop the executor
-            self.__lost += len(batch)
-            self.__report_failure(ex)
+        body = b'\n'.join(batch)
+
+        for attempt in range(SEND_ATTEMPTS):
+            try:
+                await self.__post(body)
+                return
+            except (PermanentFailure, asyncio.TimeoutError) as ex:
+                failure = ex
+                break
+            except Exception as ex:
+                failure = ex
+                if attempt + 1 < SEND_ATTEMPTS:
+                    await asyncio.sleep(RETRY_BACKOFF * (2 ** attempt))
+
+        # one bad batch must never stop the executor
+        self.__lost += len(batch)
+        self.__report_failure(failure)
 
 
 class SinkThread(Thread):
@@ -166,6 +183,7 @@ class SinkThread(Thread):
         self.__executor = None
         self.__loop = None
         self.__ready = Event()
+        self.__last_no_loop_report = 0.0
 
     def send(self, record):
         if not self.__ready.wait(STARTUP_TIMEOUT):
@@ -174,9 +192,19 @@ class SinkThread(Thread):
             return
 
         if self.__executor is None:
+            self.__report_no_loop()
             return
 
         self.__executor.send(record)
+
+    def __report_no_loop(self):
+        now = time.monotonic()
+        if (self.__last_no_loop_report
+                and now - self.__last_no_loop_report < REPORT_INTERVAL):
+            return
+
+        self.__last_no_loop_report = now
+        report('the background loop is gone, log messages are being dropped')
 
     def flush(self, timeout):
         if not self.__ready.wait(STARTUP_TIMEOUT) or self.__executor is None:
@@ -201,6 +229,7 @@ class SinkThread(Thread):
         try:
             loop.run_until_complete(self.__main())
         except Exception as ex:
+            self.__executor = None
             report('the background logging loop stopped: %s' % ex)
             traceback.print_exc()
         finally:

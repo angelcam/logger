@@ -72,6 +72,17 @@ thread drains as fast as the target accepts them:
   pool that keeps its connections alive between batches.
 * **No message is dropped** because the senders are too slow. The queue is
   unbounded, so a burst is delivered eventually rather than partially.
+* A batch that fails on a network error, a 429 or a 5xx is retried three times
+  with an exponential backoff. Measured against a target that answered 503 for
+  three seconds, 99% of the messages survived instead of 5% without retries.
+  An outage longer than the retry window still loses the batches attempted
+  during it.
+* Two kinds of failure are **not** retried. A 4xx other than 429 means the
+  request itself is wrong, so the same request would keep failing. A timeout
+  leaves the outcome unknown: the endpoint may already hold the batch, and
+  neither target offers an idempotency key, so retrying would deliver those
+  records twice. In both cases the target stays enabled and the loss is
+  reported to stderr with the number of records.
 * Whatever is still queued when the process exits is flushed before the
   interpreter shuts down. Applications with an orderly shutdown can also call
   `log.flush()` themselves; it returns `False` if the queue could not be

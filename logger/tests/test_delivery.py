@@ -1,11 +1,10 @@
-import json
 import time
 import unittest
 
 from unittest import mock
 
 from ..sinks import loggly
-from .support import FakeIngestServer, wait_until
+from .support import FakeIngestServer, delivered, wait_until
 
 
 class DeliveryTest(unittest.TestCase):
@@ -32,14 +31,14 @@ class DeliveryTest(unittest.TestCase):
                         'a lone message must not wait for company')
 
     def test_batches_burst(self):
-        for i in range(5000):
-            self.session.send({'message': 'message-%d' % i})
+        expected = ['message-%d' % i for i in range(5000)]
+
+        for message in expected:
+            self.session.send({'message': message})
 
         self.assertTrue(self.session.flush(timeout=30))
 
-        delivered = [line for _, _, body in self.server.requests
-                     for line in body.split(b'\n')]
-        self.assertEqual(len(delivered), 5000)
+        self.assertEqual(sorted(delivered(self.server)), sorted(expected))
         self.assertLess(len(self.server.requests), 100,
                         'sent one request per message instead of batching')
 

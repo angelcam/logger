@@ -4,7 +4,7 @@ import unittest
 from unittest import mock
 
 from ..sinks import betterstack
-from .support import FakeIngestServer, wait_until
+from .support import FakeIngestServer, delivered, wait_until
 
 
 class BetterStackEncodingTest(unittest.TestCase):
@@ -55,11 +55,11 @@ class BetterStackSessionTest(unittest.TestCase):
             session.send({'message': 'first'})
             session.send({'message': 'second'})
 
-            wait_until(lambda: server.requests, message='nothing was delivered')
+            wait_until(lambda: len(delivered(server)) == 2,
+                       message='both records were not delivered')
 
-        path, headers, body = server.requests[0]
-        messages = [json.loads(line)['message'] for line in body.split(b'\n')]
+        path, headers, _ = server.requests[0]
 
         self.assertEqual(headers['authorization'], 'Bearer the-token')
         self.assertEqual(headers['content-type'], 'application/x-ndjson')
-        self.assertEqual(sorted(messages), ['first', 'second'])
+        self.assertEqual(sorted(delivered(server)), ['first', 'second'])

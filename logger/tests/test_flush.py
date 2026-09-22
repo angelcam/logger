@@ -1,12 +1,11 @@
 import contextlib
 import io
-import json
 import unittest
 
 from unittest import mock
 
 from ..sinks import loggly
-from .support import FakeIngestServer
+from .support import FakeIngestServer, delivered
 
 
 class FlushTest(unittest.TestCase):
@@ -30,10 +29,7 @@ class FlushTest(unittest.TestCase):
 
         self.assertTrue(session.flush(timeout=10), 'flush reported a timeout')
 
-        delivered = [json.loads(line)['message']
-                     for _, _, body in server.requests
-                     for line in body.split(b'\n')]
-        self.assertEqual(sorted(delivered), sorted(expected))
+        self.assertEqual(sorted(delivered(server)), sorted(expected))
 
     def test_timeout(self):
         server, session = self._session(delay=5.0)

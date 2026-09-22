@@ -1,7 +1,12 @@
 import asyncio
 import http.server
+import json
 import threading
 import time
+
+from ..sinks.executor import PermanentFailure
+
+ALWAYS = 10 ** 6
 
 
 async def eventually(predicate, timeout=2.0, message='condition never held'):
@@ -48,6 +53,9 @@ class SlowPost(RecordingPost):
 
 
 class FailingPost(RecordingPost):
+    error = IOError
+    message = 'transport is down'
+
     def __init__(self, failures=1):
         super().__init__()
         self.remaining_failures = failures
@@ -57,7 +65,7 @@ class FailingPost(RecordingPost):
         self.attempts += 1
         if self.remaining_failures > 0:
             self.remaining_failures -= 1
-            raise IOError('transport is down')
+            raise self.error(self.message)
         await super().__call__(body)
 
 
@@ -74,9 +82,12 @@ def wait_until(predicate, timeout=5.0, message='condition never held'):
 class FakeIngestServer:
     """A real HTTP/1.1 server for testing transport and connection reuse."""
 
-    def __init__(self, status=202, delay=0.0):
+    def __init__(self, status=202, delay=0.0, body=b'{"response":"ok"}',
+                 body_delay=0.0):
         self.status = status
         self.delay = delay
+        self.body = body
+        self.body_delay = body_delay
         self.requests = []
         self.connections = 0
 
@@ -98,8 +109,14 @@ class FakeIngestServer:
                     time.sleep(server.delay)
 
                 self.send_response(server.status)
-                self.send_header('content-length', '0')
+                self.send_header('content-length', str(len(server.body)))
                 self.end_headers()
+
+                if server.body_delay:
+                    self.wfile.flush()
+                    time.sleep(server.body_delay)
+
+                self.wfile.write(server.body)
 
             def log_message(self, *args):
                 pass
@@ -117,3 +134,28 @@ class FakeIngestServer:
     def close(self):
         self.__httpd.shutdown()
         self.__httpd.server_close()
+
+
+class RejectingPost(FailingPost):
+    """A transport whose failure retrying cannot fix, e.g. a rejected token."""
+
+    error = PermanentFailure
+    message = 'the token was rejected'
+
+    def __init__(self, failures=ALWAYS):
+        super().__init__(failures)
+
+
+class TimingOutPost(FailingPost):
+    error = asyncio.TimeoutError
+    message = 'no response in time'
+
+    def __init__(self, failures=ALWAYS):
+        super().__init__(failures)
+
+
+def delivered(server):
+    """All records received by the server, across all requests."""
+    return [json.loads(line)['message']
+            for _, _, body in server.requests
+            for line in body.split(b'\n')]

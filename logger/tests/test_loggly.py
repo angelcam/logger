@@ -4,7 +4,7 @@ import unittest
 from unittest import mock
 
 from ..sinks import loggly
-from .support import FakeIngestServer, wait_until
+from .support import FakeIngestServer, delivered, wait_until
 
 
 class LogglyEncodingTest(unittest.TestCase):
@@ -50,10 +50,10 @@ class LogglySessionTest(unittest.TestCase):
             session.send({'message': 'first'})
             session.send({'message': 'second'})
 
-            wait_until(lambda: server.requests, message='nothing was delivered')
+            wait_until(lambda: len(delivered(server)) == 2,
+                       message='both records were not delivered')
 
-        path, headers, body = server.requests[0]
-        messages = [json.loads(line)['message'] for line in body.split(b'\n')]
+        path, headers, _ = server.requests[0]
 
         self.assertEqual(path, '/bulk/the-token/tag/the-tag/')
-        self.assertEqual(sorted(messages), ['first', 'second'])
+        self.assertEqual(sorted(delivered(server)), ['first', 'second'])
