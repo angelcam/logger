@@ -1,0 +1,46 @@
+import contextlib
+import io
+import json
+import unittest
+
+from unittest import mock
+
+from ..sinks import loggly
+from .support import FakeIngestServer
+
+
+class FlushTest(unittest.TestCase):
+
+    def _session(self, **server_options):
+        server = FakeIngestServer(status=200, **server_options)
+        self.addCleanup(server.close)
+
+        patched = mock.patch.object(loggly, 'BULK_URL', server.url + '{}/{}')
+        patched.start()
+        self.addCleanup(patched.stop)
+
+        return server, loggly.LogglySession('the-token', 'the-tag')
+
+    def test_waits_for_queue(self):
+        server, session = self._session(delay=0.05)
+        expected = ['message-%d' % i for i in range(200)]
+
+        for message in expected:
+            session.send({'message': message})
+
+        self.assertTrue(session.flush(timeout=10), 'flush reported a timeout')
+
+        delivered = [json.loads(line)['message']
+                     for _, _, body in server.requests
+                     for line in body.split(b'\n')]
+        self.assertEqual(sorted(delivered), sorted(expected))
+
+    def test_timeout(self):
+        server, session = self._session(delay=5.0)
+        session.send({'message': 'stuck'})
+
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            flushed = session.flush(timeout=0.2)
+
+        self.assertFalse(flushed)
+        self.assertIn('flush', stderr.getvalue())
