@@ -1,10 +1,11 @@
+import aiohttp
 import asyncio
 import http.server
 import json
 import threading
 import time
 
-from ..sinks.executor import PermanentFailure
+from ..sinks.executor import PermanentFailure, RetryableFailure
 
 ALWAYS = 10 ** 6
 
@@ -53,7 +54,7 @@ class SlowPost(RecordingPost):
 
 
 class FailingPost(RecordingPost):
-    error = IOError
+    error = RetryableFailure
     message = 'transport is down'
 
     def __init__(self, failures=1):
@@ -134,6 +135,14 @@ class FakeIngestServer:
     def close(self):
         self.__httpd.shutdown()
         self.__httpd.server_close()
+
+
+class TruncatedPost(FailingPost):
+    error = aiohttp.ClientPayloadError
+    message = 'the response was cut short'
+
+    def __init__(self, failures=ALWAYS):
+        super().__init__(failures)
 
 
 class RejectingPost(FailingPost):

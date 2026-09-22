@@ -79,7 +79,6 @@ class _LoggerCore(object):
             print(message)
             sys.stdout.flush()
 
-        # each target handles the record differently: timestamp field names and batch sizes vary
         if self._loggly:
             self._loggly.send(logdata)
 

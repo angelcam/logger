@@ -8,8 +8,6 @@ from asyncio import Semaphore
 from collections import deque
 from threading import Event, Thread
 
-# how often the executor may complain about drops or failures; a target that
-# is down must not bury stderr under one traceback per batch
 REPORT_INTERVAL = 10.0
 STARTUP_TIMEOUT = 5.0
 SEND_ATTEMPTS = 3
@@ -19,6 +17,10 @@ DRAIN_POLL_INTERVAL = 0.005
 
 class PermanentFailure(Exception):
     """Unrecoverable failure, e.g., rejected token. Skips futile retries."""
+
+
+class RetryableFailure(Exception):
+    """A failure where resending is safe, as the target likely didn't act on it."""
 
 
 def report(message):
@@ -125,7 +127,6 @@ class BatchExecutor:
         self.__last_failure_report = now
         report('failed to deliver %d records so far: %s' % (self.__lost, ex))
 
-        # the traceback is worth one look, not one per batch
         if first:
             traceback.print_exc()
 
@@ -141,7 +142,7 @@ class BatchExecutor:
             task = asyncio.create_task(self.__send(batch))
             task.add_done_callback(self.__sender_finished)
 
-    def __sender_finished(self, task):
+    def __sender_finished(self, _task):
         self.__in_flight -= 1
         self.__tasks.release()
 
@@ -156,15 +157,14 @@ class BatchExecutor:
             try:
                 await self.__post(body)
                 return
-            except (PermanentFailure, asyncio.TimeoutError) as ex:
-                failure = ex
-                break
-            except Exception as ex:
+            except RetryableFailure as ex:
                 failure = ex
                 if attempt + 1 < SEND_ATTEMPTS:
                     await asyncio.sleep(RETRY_BACKOFF * (2 ** attempt))
+            except Exception as ex:
+                failure = ex
+                break
 
-        # one bad batch must never stop the executor
         self.__lost += len(batch)
         self.__report_failure(failure)
 

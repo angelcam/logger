@@ -1,7 +1,7 @@
 import asyncio
 import unittest
 
-from ..sinks.executor import PermanentFailure
+from ..sinks.executor import PermanentFailure, RetryableFailure
 from ..sinks.transport import HttpTransport
 from .support import FakeIngestServer
 
@@ -69,19 +69,33 @@ class HttpTransportTest(unittest.IsolatedAsyncioTestCase):
         server = self._server(status=503)
         transport = await self._transport(server)
 
-        with self.assertRaises(Exception) as caught:
+        with self.assertRaises(RetryableFailure):
             await transport(b'{"m":"a"}')
-
-        self.assertNotIsInstance(caught.exception, PermanentFailure)
 
     async def test_retryable_on_rate_limit(self):
         server = self._server(status=429)
         transport = await self._transport(server)
 
-        with self.assertRaises(Exception) as caught:
+        with self.assertRaises(RetryableFailure):
             await transport(b'{"m":"a"}')
 
-        self.assertNotIsInstance(caught.exception, PermanentFailure)
+    async def test_reuses_the_connection_on_a_retryable_error(self):
+        server = self._server(status=503, body=b'try later', body_delay=0.05)
+        transport = await self._transport(server)
+
+        for _ in range(5):
+            with self.assertRaises(RetryableFailure):
+                await transport(b'{"m":"a"}')
+
+        self.assertEqual(server.connections, 1,
+                         'opened a connection per failed attempt')
+
+    async def test_retryable_when_it_cannot_connect(self):
+        transport = HttpTransport('http://127.0.0.1:1/', {}, 5.0)
+        self.addAsyncCleanup(transport.close)
+
+        with self.assertRaises(RetryableFailure):
+            await transport(b'{"m":"a"}')
 
     async def test_error_includes_the_body(self):
         server = self._server(status=400, body=b'tag is not valid')

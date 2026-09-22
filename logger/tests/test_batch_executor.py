@@ -9,7 +9,7 @@ from ..sinks import executor as executor_module
 from ..sinks.executor import BatchExecutor
 from .support import (ALWAYS, BlockingPost, FailingPost, RecordingPost,
                       RejectingPost, SlowPost, TimingOutPost,
-                      eventually)
+                      TruncatedPost, eventually)
 
 
 class ExecutorTestCase(unittest.IsolatedAsyncioTestCase):
@@ -146,9 +146,10 @@ class ReportingTest(ExecutorTestCase):
                 await eventually(lambda n=i: executor.lost == n + 1)
 
         report = stderr.getvalue()
-        # a target that is down must not bury stderr under repeated tracebacks
-        self.assertEqual(report.count('logger: failed to deliver'), 1)
-        self.assertLessEqual(report.count('Traceback'), 1)
+        self.assertEqual(report.count('logger: failed to deliver'), 1,
+                         'a target that is down flooded stderr')
+        self.assertLessEqual(report.count('Traceback'), 1,
+                             'printed a traceback per failed batch')
 
     async def test_reports_total_lost(self):
         post = FailingPost(failures=ALWAYS)
@@ -195,6 +196,16 @@ class RetryTest(ExecutorTestCase):
 
         self.assertEqual(post.attempts, 1,
                          'retried a failure that can never succeed')
+
+    async def test_does_not_retry_an_ambiguous_failure(self):
+        post = TruncatedPost()
+
+        with contextlib.redirect_stderr(io.StringIO()):
+            executor = self._start(post)
+            executor.send(b'a')
+            await eventually(lambda: executor.lost == 1)
+
+        self.assertEqual(post.attempts, 1, 'retried an ambiguous failure')
 
     async def test_does_not_retry_a_timeout(self):
         post = TimingOutPost()

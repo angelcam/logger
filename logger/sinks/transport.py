@@ -1,7 +1,7 @@
 import asyncio
 import aiohttp
 
-from .executor import PermanentFailure
+from .executor import PermanentFailure, RetryableFailure
 
 TOO_MANY_REQUESTS = 429
 
@@ -16,7 +16,11 @@ class HttpTransport:
         self.__session = aiohttp.ClientSession()
 
     async def __call__(self, body):
-        await asyncio.wait_for(self.__post(body), self.__timeout)
+        try:
+            await asyncio.wait_for(self.__post(body), self.__timeout)
+        except aiohttp.ClientConnectorError as ex:
+            raise RetryableFailure('could not reach the ingest endpoint: %s'
+                                   % ex)
 
     async def __post(self, body):
         async with self.__session.post(self.__url, data=body,
@@ -29,7 +33,10 @@ class HttpTransport:
             message = ('the ingest endpoint returned HTTP %d: %s'
                        % (response.status, detail[:200]))
 
-            if 400 <= response.status < 500 and response.status != TOO_MANY_REQUESTS:
+            if response.status == TOO_MANY_REQUESTS or response.status >= 500:
+                raise RetryableFailure(message)
+
+            if 400 <= response.status < 500:
                 raise PermanentFailure(message)
 
             raise IOError(message)
