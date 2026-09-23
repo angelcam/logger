@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import unittest
 
 from ..sinks.executor import PermanentFailure, RetryableFailure
@@ -27,88 +28,55 @@ class HttpTransportTest(unittest.IsolatedAsyncioTestCase):
 
         await transport(b'{"m":"a"}\n{"m":"b"}')
 
-        path, headers, body = server.requests[0]
+        _, headers, body = server.requests[0]
         self.assertEqual(body, b'{"m":"a"}\n{"m":"b"}')
         self.assertEqual(headers['authorization'], 'Bearer secret')
         self.assertEqual(headers['content-type'], 'application/x-ndjson')
 
-    async def test_bad_status(self):
-        server = self._server(status=413)
-        transport = await self._transport(server)
-
-        with self.assertRaises(PermanentFailure) as caught:
-            await transport(b'too big')
-
-        self.assertIn('413', str(caught.exception))
-
-    async def test_connection_reuse(self):
-        server = self._server(status=202, body_delay=0.05)
-        transport = await self._transport(server)
-
-        for _ in range(5):
-            await transport(b'{"m":"a"}')
-
-        self.assertEqual(len(server.requests), 5)
-        self.assertEqual(server.connections, 1, 'opened a connection per request')
-
-    async def test_timeout(self):
-        server = self._server(status=202, delay=0.5)
-        transport = await self._transport(server, timeout=0.1)
-
-        with self.assertRaises(asyncio.TimeoutError):
-            await transport(b'{"m":"a"}')
-
-    async def test_permanent_on_client_error(self):
-        server = self._server(status=403)
-        transport = await self._transport(server)
-
-        with self.assertRaises(PermanentFailure):
-            await transport(b'{"m":"a"}')
-
-    async def test_retryable_on_server_error(self):
-        server = self._server(status=503)
-        transport = await self._transport(server)
-
-        with self.assertRaises(RetryableFailure):
-            await transport(b'{"m":"a"}')
-
-    async def test_retryable_on_rate_limit(self):
-        server = self._server(status=429)
-        transport = await self._transport(server)
-
-        with self.assertRaises(RetryableFailure):
-            await transport(b'{"m":"a"}')
-
-    async def test_reuses_the_connection_on_a_retryable_error(self):
-        server = self._server(status=503, body=b'try later', body_delay=0.05)
-        transport = await self._transport(server)
-
-        for _ in range(5):
-            with self.assertRaises(RetryableFailure):
-                await transport(b'{"m":"a"}')
-
-        self.assertEqual(server.connections, 1,
-                         'opened a connection per failed attempt')
-
-    async def test_retryable_when_it_cannot_connect(self):
-        transport = HttpTransport('http://127.0.0.1:1/', {}, 5.0)
-        self.addAsyncCleanup(transport.close)
-
-        with self.assertRaises(RetryableFailure):
-            await transport(b'{"m":"a"}')
-
-    async def test_error_includes_the_body(self):
+    async def test_client_error(self):
         server = self._server(status=400, body=b'tag is not valid')
         transport = await self._transport(server)
 
         with self.assertRaises(PermanentFailure) as caught:
             await transport(b'{"m":"a"}')
 
+        self.assertIn('400', str(caught.exception))
         self.assertIn('tag is not valid', str(caught.exception))
 
-    async def test_timeout_covers_the_body(self):
-        server = self._server(status=202, body_delay=1.0)
-        transport = await self._transport(server, timeout=0.2)
+    async def test_retryable_status(self):
+        for status in (429, 503):
+            with self.subTest(status=status):
+                transport = await self._transport(self._server(status=status))
 
-        with self.assertRaises(asyncio.TimeoutError):
+                with self.assertRaises(RetryableFailure):
+                    await transport(b'{"m":"a"}')
+
+    async def test_cannot_connect(self):
+        transport = HttpTransport('http://127.0.0.1:1/', {}, 5.0)
+        self.addAsyncCleanup(transport.close)
+
+        with self.assertRaises(RetryableFailure):
             await transport(b'{"m":"a"}')
+
+    async def test_connection_reuse(self):
+        for status in (202, 503):
+            with self.subTest(status=status):
+                server = self._server(status=status, body_delay=0.05)
+                transport = await self._transport(server)
+
+                for _ in range(5):
+                    with contextlib.suppress(RetryableFailure):
+                        await transport(b'{"m":"a"}')
+
+                self.assertEqual(len(server.requests), 5)
+                self.assertEqual(server.connections, 1,
+                                 'opened a connection per request')
+
+    async def test_timeout(self):
+        for options in ({'delay': 0.5}, {'body_delay': 0.5}):
+            with self.subTest(**options):
+                server = self._server(status=202, **options)
+                transport = await self._transport(server, timeout=0.1)
+
+                with self.assertRaises(asyncio.TimeoutError):
+                    await transport(b'{"m":"a"}')

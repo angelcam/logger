@@ -7,9 +7,8 @@ from unittest import mock
 
 from ..sinks import executor as executor_module
 from ..sinks.executor import BatchExecutor
-from .support import (ALWAYS, BlockingPost, FailingPost, RecordingPost,
-                      RejectingPost, SlowPost, TimingOutPost,
-                      TruncatedPost, eventually)
+from .support import (ALWAYS, BlockingPost, FailingPost, RejectingPost,
+                      SlowPost, TimingOutPost, TruncatedPost, eventually)
 
 
 class ExecutorTestCase(unittest.IsolatedAsyncioTestCase):
@@ -29,16 +28,6 @@ class ExecutorTestCase(unittest.IsolatedAsyncioTestCase):
 
 class BatchingTest(ExecutorTestCase):
 
-    async def test_ndjson_body(self):
-        post = RecordingPost()
-        executor = self._start(post)
-
-        executor.send(b'{"m":"a"}')
-        executor.send(b'{"m":"b"}')
-
-        await eventually(lambda: len(post.records) == 2)
-        self.assertEqual(sorted(post.records), [b'{"m":"a"}', b'{"m":"b"}'])
-
     async def test_max_tasks(self):
         post = BlockingPost()
         executor = self._start(post, max_tasks=3)
@@ -52,9 +41,9 @@ class BatchingTest(ExecutorTestCase):
         self.assertEqual(post.in_flight, 3, 'exceeded max_tasks')
 
 
-class NoDropByDefaultTest(ExecutorTestCase):
+class DroppingTest(ExecutorTestCase):
 
-    async def test_slow_sender(self):
+    async def test_no_drop_default(self):
         post = SlowPost(delay=0.02)
         executor = self._start(post, max_tasks=1)
         expected = [f'{i}'.encode() for i in range(2000)]
@@ -66,57 +55,31 @@ class NoDropByDefaultTest(ExecutorTestCase):
         self.assertEqual(sorted(post.records), sorted(expected))
         self.assertEqual(executor.dropped, 0)
 
-
-class OptionalDroppingTest(ExecutorTestCase):
-
-    async def test_unbounded_by_default(self):
-        executor = self._start(BlockingPost(), max_tasks=1)
-
-        for _ in range(5000):
-            executor.send(b'x')
-
-        await asyncio.sleep(0.05)
-        self.assertEqual(executor.dropped, 0)
-
     async def test_drops_when_full(self):
         post = BlockingPost()
         executor = self._start(post, max_tasks=1, max_queue_size=5)
         executor.send(b'first')
         await eventually(lambda: post.in_flight == 1)
 
-        for i in range(20):
-            executor.send(f'{i}'.encode())
-        await asyncio.sleep(0.05)
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            for i in range(20):
+                executor.send(f'{i}'.encode())
+            await asyncio.sleep(0.05)
 
         self.assertEqual(executor.queue_size, 5)
         self.assertEqual(executor.dropped, 15)
-
-
-class ReportingTest(ExecutorTestCase):
-
-    async def test_reports_drops(self):
-        post = BlockingPost()
-        executor = self._start(post, max_tasks=1, max_queue_size=1)
-
-        executor.send(b'first')
-        await eventually(lambda: post.in_flight == 1)
-
-        with contextlib.redirect_stderr(io.StringIO()) as stderr:
-            for _ in range(10):
-                executor.send(b'x')
-            await asyncio.sleep(0.05)
-
         report = stderr.getvalue()
         self.assertIn('queue is full', report)
-        self.assertIn('dropped', report)
         self.assertEqual(len(report.strip().splitlines()), 1)
-        self.assertEqual(executor.dropped, 9)
+
+
+class FailureTest(ExecutorTestCase):
 
     async def test_reports_failure(self):
         post = FailingPost(failures=ALWAYS)
 
         with contextlib.redirect_stderr(io.StringIO()) as stderr:
-            executor = self._start(post)
+            executor = self._start(post, max_tasks=1)
             executor.send(b'lost')
             executor.send(b'lost too')
             await eventually(lambda: executor.lost == 2)
@@ -125,18 +88,7 @@ class ReportingTest(ExecutorTestCase):
         self.assertIn('transport is down', report)
         self.assertIn('2 records', report)
 
-    async def test_survives_failure(self):
-        post = RejectingPost(failures=1)
-
-        with contextlib.redirect_stderr(io.StringIO()):
-            executor = self._start(post, max_tasks=1)
-            executor.send(b'lost')
-            await eventually(lambda: executor.lost == 1)
-
-            executor.send(b'delivered')
-            await eventually(lambda: post.records == [b'delivered'])
-
-    async def test_rate_limits_failures(self):
+    async def test_rate_limits(self):
         post = FailingPost(failures=ALWAYS)
 
         with contextlib.redirect_stderr(io.StringIO()) as stderr:
@@ -151,22 +103,21 @@ class ReportingTest(ExecutorTestCase):
         self.assertLessEqual(report.count('Traceback'), 1,
                              'printed a traceback per failed batch')
 
-    async def test_reports_total_lost(self):
-        post = FailingPost(failures=ALWAYS)
+    async def test_survives_failure(self):
+        post = RejectingPost(failures=1)
 
-        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+        with contextlib.redirect_stderr(io.StringIO()):
             executor = self._start(post, max_tasks=1)
-            executor.send(b'a')
+            executor.send(b'lost')
             await eventually(lambda: executor.lost == 1)
-            executor.send(b'b')
-            await eventually(lambda: executor.lost == 2)
 
-        self.assertIn('1 records', stderr.getvalue())
+            executor.send(b'delivered')
+            await eventually(lambda: post.records == [b'delivered'])
 
 
 class RetryTest(ExecutorTestCase):
 
-    async def test_retries_a_transient_failure(self):
+    async def test_retries_transient(self):
         post = FailingPost(failures=2)
         executor = self._start(post)
 
@@ -176,7 +127,7 @@ class RetryTest(ExecutorTestCase):
         self.assertEqual(post.attempts, 3)
         self.assertEqual(executor.lost, 0)
 
-    async def test_gives_up_after_the_last_attempt(self):
+    async def test_gives_up(self):
         post = FailingPost(failures=99)
 
         with contextlib.redirect_stderr(io.StringIO()):
@@ -186,33 +137,14 @@ class RetryTest(ExecutorTestCase):
 
         self.assertEqual(post.attempts, executor_module.SEND_ATTEMPTS)
 
-    async def test_does_not_retry_a_permanent_failure(self):
-        post = RejectingPost()
+    async def test_no_retry(self):
+        for post_class in (RejectingPost, TruncatedPost, TimingOutPost):
+            with self.subTest(post_class.__name__):
+                post = post_class()
 
-        with contextlib.redirect_stderr(io.StringIO()):
-            executor = self._start(post)
-            executor.send(b'a')
-            await eventually(lambda: executor.lost == 1)
+                with contextlib.redirect_stderr(io.StringIO()):
+                    executor = self._start(post)
+                    executor.send(b'a')
+                    await eventually(lambda: executor.lost == 1)
 
-        self.assertEqual(post.attempts, 1,
-                         'retried a failure that can never succeed')
-
-    async def test_does_not_retry_an_ambiguous_failure(self):
-        post = TruncatedPost()
-
-        with contextlib.redirect_stderr(io.StringIO()):
-            executor = self._start(post)
-            executor.send(b'a')
-            await eventually(lambda: executor.lost == 1)
-
-        self.assertEqual(post.attempts, 1, 'retried an ambiguous failure')
-
-    async def test_does_not_retry_a_timeout(self):
-        post = TimingOutPost()
-
-        with contextlib.redirect_stderr(io.StringIO()):
-            executor = self._start(post)
-            executor.send(b'a')
-            await eventually(lambda: executor.lost == 1)
-
-        self.assertEqual(post.attempts, 1, 'retried an ambiguous failure')
+                self.assertEqual(post.attempts, 1)

@@ -1,11 +1,10 @@
-import json
 import os
 import subprocess
 import sys
 import textwrap
 import unittest
 
-from .support import FakeIngestServer
+from .support import FakeIngestServer, delivered
 
 CHILD = textwrap.dedent("""
     from logger.sinks import loggly
@@ -32,8 +31,5 @@ class ProcessExitTest(unittest.TestCase):
 
         self.assertEqual(finished.returncode, 0, finished.stderr.decode())
 
-        delivered = [json.loads(line)['message']
-                     for _, _, body in server.requests
-                     for line in body.split(b'\n')]
-        self.assertEqual(len(delivered), 100,
+        self.assertEqual(len(delivered(server)), 100,
                          'records queued at exit were lost')
