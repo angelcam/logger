@@ -57,7 +57,7 @@ class NoDropByDefaultTest(ExecutorTestCase):
     async def test_slow_sender(self):
         post = SlowPost(delay=0.02)
         executor = self._start(post, max_tasks=1)
-        expected = [b'%d' % i for i in range(2000)]
+        expected = [f'{i}'.encode() for i in range(2000)]
 
         for record in expected:
             executor.send(record)
@@ -85,7 +85,7 @@ class OptionalDroppingTest(ExecutorTestCase):
         await eventually(lambda: post.in_flight == 1)
 
         for i in range(20):
-            executor.send(b'%d' % i)
+            executor.send(f'{i}'.encode())
         await asyncio.sleep(0.05)
 
         self.assertEqual(executor.queue_size, 5)
@@ -142,7 +142,7 @@ class ReportingTest(ExecutorTestCase):
         with contextlib.redirect_stderr(io.StringIO()) as stderr:
             executor = self._start(post, max_tasks=1)
             for i in range(10):
-                executor.send(b'%d' % i)
+                executor.send(f'{i}'.encode())
                 await eventually(lambda n=i: executor.lost == n + 1)
 
         report = stderr.getvalue()

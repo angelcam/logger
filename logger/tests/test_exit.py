@@ -14,7 +14,7 @@ CHILD = textwrap.dedent("""
 
     session = loggly.LogglySession('the-token', 'the-tag')
     for i in range(100):
-        session.send({'message': 'message-%d' % i})
+        session.send({'message': f'message-{i}'})
 """)
 
 

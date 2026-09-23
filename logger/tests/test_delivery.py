@@ -31,7 +31,7 @@ class DeliveryTest(unittest.TestCase):
                         'a lone message must not wait for company')
 
     def test_batches_burst(self):
-        expected = ['message-%d' % i for i in range(5000)]
+        expected = [f'message-{i}' for i in range(5000)]
 
         for message in expected:
             self.session.send({'message': message})

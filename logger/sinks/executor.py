@@ -24,7 +24,7 @@ class RetryableFailure(Exception):
 
 
 def report(message):
-    print('logger: %s' % message, file=sys.stderr)
+    print(f'logger: {message}', file=sys.stderr)
 
 
 class AsyncQueue:
@@ -115,7 +115,7 @@ class BatchExecutor:
             return
 
         self.__last_drop_report = now
-        report('queue is full, dropped %d records so far' % self.__dropped)
+        report(f'queue is full, dropped {self.__dropped} records so far')
 
     def __report_failure(self, ex):
         now = time.monotonic()
@@ -125,7 +125,7 @@ class BatchExecutor:
 
         first = not self.__last_failure_report
         self.__last_failure_report = now
-        report('failed to deliver %d records so far: %s' % (self.__lost, ex))
+        report(f'failed to deliver {self.__lost} records so far: {ex}')
 
         if first:
             traceback.print_exc()
@@ -187,8 +187,8 @@ class SinkThread(Thread):
 
     def send(self, record):
         if not self.__ready.wait(STARTUP_TIMEOUT):
-            report('background loop did not start within %ss, dropping a record'
-                   % STARTUP_TIMEOUT)
+            report(f'background loop did not start within {STARTUP_TIMEOUT}s, '
+                   'dropping a record')
             return
 
         if self.__executor is None:
@@ -218,8 +218,8 @@ class SinkThread(Thread):
             return True
         except concurrent.futures.TimeoutError:
             draining.cancel()
-            report('flush did not finish within %ss, %d records were not '
-                   'delivered' % (timeout, self.__executor.queue_size))
+            report(f'flush did not finish within {timeout}s, '
+                   f'{self.__executor.queue_size} records were not delivered')
             return False
 
     def run(self):
@@ -230,7 +230,7 @@ class SinkThread(Thread):
             loop.run_until_complete(self.__main())
         except Exception as ex:
             self.__executor = None
-            report('the background logging loop stopped: %s' % ex)
+            report(f'the background logging loop stopped: {ex}')
             traceback.print_exc()
         finally:
             self.__ready.set()

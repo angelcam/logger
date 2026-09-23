@@ -1,13 +1,15 @@
 import aiohttp
 import asyncio
-import http.server
 import json
 import threading
 import time
 
+from aiohttp import web
+
 from ..sinks.executor import PermanentFailure, RetryableFailure
 
 ALWAYS = 10 ** 6
+MAX_BODY_SIZE = 64 * 1024 * 1024
 
 
 async def eventually(predicate, timeout=2.0, message='condition never held'):
@@ -15,7 +17,7 @@ async def eventually(predicate, timeout=2.0, message='condition never held'):
 
     while not predicate():
         if asyncio.get_running_loop().time() > deadline:
-            raise AssertionError('%s after %ss' % (message, timeout))
+            raise AssertionError(f'{message} after {timeout}s')
         await asyncio.sleep(0.005)
 
 
@@ -76,7 +78,7 @@ def wait_until(predicate, timeout=5.0, message='condition never held'):
 
     while not predicate():
         if time.monotonic() > deadline:
-            raise AssertionError('%s after %ss' % (message, timeout))
+            raise AssertionError(f'{message} after {timeout}s')
         time.sleep(0.005)
 
 
@@ -90,51 +92,62 @@ class FakeIngestServer:
         self.body = body
         self.body_delay = body_delay
         self.requests = []
-        self.connections = 0
+        self.__peers = set()
 
-        server = self
-
-        class Handler(http.server.BaseHTTPRequestHandler):
-            protocol_version = 'HTTP/1.1'
-
-            def setup(self):
-                server.connections += 1
-                super().setup()
-
-            def do_POST(self):
-                length = int(self.headers.get('content-length', 0))
-                body = self.rfile.read(length)
-                server.requests.append((self.path, dict(self.headers), body))
-
-                if server.delay:
-                    time.sleep(server.delay)
-
-                self.send_response(server.status)
-                self.send_header('content-length', str(len(server.body)))
-                self.end_headers()
-
-                if server.body_delay:
-                    self.wfile.flush()
-                    time.sleep(server.body_delay)
-
-                self.wfile.write(server.body)
-
-            def log_message(self, *args):
-                pass
-
-        self.__httpd = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
-        self.__thread = threading.Thread(target=self.__httpd.serve_forever,
+        self.__loop = asyncio.new_event_loop()
+        self.__thread = threading.Thread(target=self.__loop.run_forever,
                                          daemon=True)
         self.__thread.start()
 
+        self.__runner = web.AppRunner(self.__app(), access_log=None)
+        self.__call(self.__start())
+
+    def __call(self, coroutine):
+        return asyncio.run_coroutine_threadsafe(coroutine, self.__loop).result()
+
+    def __app(self):
+        app = web.Application(client_max_size=MAX_BODY_SIZE)
+        app.router.add_post('/{path:.*}', self.__handle)
+        return app
+
+    async def __start(self):
+        await self.__runner.setup()
+        await web.TCPSite(self.__runner, '127.0.0.1', 0).start()
+
+    async def __handle(self, request):
+        self.__peers.add(request.transport.get_extra_info('peername'))
+        headers = {k.lower(): v for k, v in request.headers.items()}
+        self.requests.append((request.path_qs, headers, await request.read()))
+
+        await asyncio.sleep(self.delay)
+
+        response = web.StreamResponse(status=self.status)
+        response.content_length = len(self.body)
+
+        try:
+            await response.prepare(request)
+            await asyncio.sleep(self.body_delay)
+            await response.write(self.body)
+            await response.write_eof()
+        except ConnectionResetError:
+            pass
+
+        return response
+
+    @property
+    def connections(self):
+        return len(self.__peers)
+
     @property
     def url(self):
-        host, port = self.__httpd.server_address[:2]
-        return 'http://%s:%d/' % (host, port)
+        host, port = self.__runner.addresses[0][:2]
+        return f'http://{host}:{port}/'
 
     def close(self):
-        self.__httpd.shutdown()
-        self.__httpd.server_close()
+        self.__call(self.__runner.cleanup())
+        self.__loop.call_soon_threadsafe(self.__loop.stop)
+        self.__thread.join()
+        self.__loop.close()
 
 
 class TruncatedPost(FailingPost):

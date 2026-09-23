@@ -22,7 +22,7 @@ class FlushTest(unittest.TestCase):
 
     def test_waits_for_queue(self):
         server, session = self._session(delay=0.05)
-        expected = ['message-%d' % i for i in range(200)]
+        expected = [f'message-{i}' for i in range(200)]
 
         for message in expected:
             session.send({'message': message})

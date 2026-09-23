@@ -9,7 +9,7 @@ MAX_BATCH_SIZE = 10000000
 
 def headers(source_token):
     return {
-        'authorization': 'Bearer {}'.format(source_token),
+        'authorization': f'Bearer {source_token}',
         'content-type': 'application/x-ndjson',
     }
 
