@@ -1,14 +1,11 @@
 import datetime
 import json
-import pytz
 import sys
 
 from syslog import syslog, openlog
 
-if sys.version_info.major > 2:
-    from .loggly3 import LogglySession
-else:
-    from .loggly2 import LogglySession
+from .sinks.betterstack import BetterStackSession
+from .sinks.loggly import LogglySession
 
 # logging levels
 DEBUG = 0
@@ -26,6 +23,7 @@ class _LoggerCore(object):
         self._write_output = False
         self._syslog = False
         self._loggly = None
+        self._better_stack = None
 
         self._levelDict = {DEBUG: "debug", INFO: "info", WARN: "warn", ERROR: "error", }
         # inverse levelDict
@@ -69,10 +67,8 @@ class _LoggerCore(object):
                         logdata["misc"] += ", " + str(key) + ": " + str(value)
                     else:
                         logdata["misc"] = str(key) + ":" + str(value)
-        jsonlog = json.dumps(logdata)
-
         if self._syslog:
-            syslog(jsonlog)
+            syslog(json.dumps(logdata))
 
         # write output to stdout
         if self._write_output:
@@ -84,8 +80,10 @@ class _LoggerCore(object):
             sys.stdout.flush()
 
         if self._loggly:
-            timestamp = datetime.datetime.now(tz=pytz.utc)
-            self._loggly.send(json.dumps({'timestamp': timestamp.isoformat(), **logdata}))
+            self._loggly.send(logdata)
+
+        if self._better_stack:
+            self._better_stack.send(logdata)
 
     # XXX backward compatibility
     def start(self, app_name):
@@ -102,19 +100,23 @@ class _LoggerCore(object):
         self._syslog = True
         openlog(app_name)
 
-    def set_loggly(self, token, tag):
-        self._loggly = LogglySession(token, tag)
+    def set_loggly(self, token, tag, **options):
+        self._loggly = LogglySession(token, tag, **options)
+
+    def set_better_stack(self, source_token, ingesting_host, **options):
+        self._better_stack = BetterStackSession(
+            source_token, ingesting_host, **options)
+
+    def flush(self, timeout=None):
+        targets = [t for t in (self._loggly, self._better_stack) if t]
+        options = {} if timeout is None else {'timeout': timeout}
+        results = [target.flush(**options) for target in targets]
+
+        return all(results)
 
     def set_min_level(self, level):
-
-        # this is for python 2 and 3 compatibility
-        try:
-            basestring
-        except NameError:
-            basestring = str
-
         newLevel = level
-        if isinstance(level, basestring):
+        if isinstance(level, str):
             try:
                 newLevel = self._strLevel[level.lower()]
             except KeyError:
